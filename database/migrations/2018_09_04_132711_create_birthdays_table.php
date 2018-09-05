@@ -16,7 +16,7 @@ class CreateBirthdaysTable extends Migration
         Schema::create('birthday_exchange_rates', function (Blueprint $table) {
             $table->increments('id');
             $table->date('birthday');
-            $table->string('currency_code');
+            $table->integer('search_count')->default(1);
             $table->float('exchange_rate', 20, 6);
             $table->timestamps();
         });

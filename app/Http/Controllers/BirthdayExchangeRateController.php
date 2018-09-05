@@ -2,10 +2,9 @@
 
 namespace App\Http\Controllers;
 
-use Illuminate\Http\Request;
-
 use App\BirthdayExchangeRate;
-use Session;
+use GuzzleHttp\Client;
+use GuzzleHttp\Exception\RequestException;
 
 class BirthdayExchangeRateController extends Controller
 {
@@ -17,39 +16,60 @@ class BirthdayExchangeRateController extends Controller
     public function index()
     {
         $birthdays = BirthdayExchangeRate::all()->sortByDesc('birthday');
-        return view('index')->with('birthdays', $birthdays);
+        return view('index', compact('birthdays'));
     }
 
     /**
-     * Store a newly created resource in storage.
+     * Searches for the exchange rate and creates the record if a successful result is found.
      *
-     * @param  \Illuminate\Http\Request  $request
      * @return \Illuminate\Http\Response
      */
-    public function store(Request $request)
+    public function create($birthday = -1)
     {
-        /*
-        $this->validate($request, [
-            'name'=>'required|max:120',
-            'email'=>'required|email|unique:users',
-            'password'=>'required|min:6|confirmed'
-        ]);
-
-        $user = User::create($request->only('email', 'name', 'password'));
-
-        $roles = $request['roles'];
-
-        if (isset($roles)) {
-
-            foreach ($roles as $role) {
-            $role_r = Role::where('id', '=', $role)->firstOrFail();
-            $user->assignRole($role_r);
-            }
+        if ($birthday == -1) {
+            return \Response::json(array("success" => false, "error" => array("info" => "Invalid birthday date entered")));
         }
 
-        return redirect()->route('users.index')
-            ->with('flash_message',
-             'User successfully added.');
-             */
+        // Check date is valid
+        $date_validation = explode('-', $birthday);
+        if (count($date_validation) < 3 || !checkdate($date_validation[1], $date_validation[2], $date_validation[0])) {
+            return \Response::json(array("success" => false, "error" => array("info" => "Invalid birthday date entered")));
+        }
+
+        // Check date is within last year
+        if (strtotime($birthday) < strtotime("-1 year")) {
+            return \Response::json(array("success" => false, "error" => array("info" => "Selected birthday was older than 1 year ago")));
+        }
+
+        // Check date is not in the future
+        if (strtotime($birthday) > strtotime("+1 day")) {
+            return \Response::json(array("success" => false, "error" => array("info" => "Selected birthday is in the future!")));
+        }
+
+        // Connect to Fixer API using Guzzle and get the exchange rate
+        $client = new Client();
+        try {
+            $res = $client->request('POST', 'http://data.fixer.io/api/' . $birthday, [
+                'query' => [
+                    'access_key' => env("FIXER_API_KEY"),
+                    'symbols' => env("EXCHANGE_CURRENCY"),
+                ],
+            ]);
+            $json_data = json_decode($res->getBody(), true);
+
+            // Save data to database
+            if (BirthdayExchangeRate::where('birthday', $birthday)->exists()) {
+                BirthdayExchangeRate::where('birthday', $birthday)->increment('search_count');
+            }
+            $birthday_data = BirthdayExchangeRate::updateOrCreate(['birthday' => $birthday], ['exchange_rate' => $json_data["rates"]["SEK"]]);
+            if (is_null($birthday_data->search_count)) {
+                $birthday_data->search_count = 1;
+            }
+
+            // Return data to front end so it can be updated without reloading the entire page
+            return \Response::json(array("success" => true, "exchange_rate" => $birthday_data->exchange_rate, "search_count" => $birthday_data->search_count));
+        } catch (RequestException $e) {
+            return \Response::json(array("success" => false, "error" => array("info" => "Failed to connect to exchange rate API endpoint")));
+        }
     }
 }

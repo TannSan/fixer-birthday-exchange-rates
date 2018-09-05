@@ -8,7 +8,7 @@ class BirthdayExchangeRate extends Model
 {
     protected $fillable = [
         'birthday',
-        'currency_code',
+        'search_count',
         'exchange_rate'
     ];
 }
