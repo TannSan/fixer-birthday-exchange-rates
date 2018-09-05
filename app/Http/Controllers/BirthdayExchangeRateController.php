@@ -51,11 +51,19 @@ class BirthdayExchangeRateController extends Controller
         try {
             $res = $client->request('POST', 'http://data.fixer.io/api/' . $birthday, [
                 'query' => [
-                    'access_key' => env("FIXER_API_KEY"),
-                    'symbols' => env("EXCHANGE_CURRENCY"),
+                    'access_key' => config("app.fixer_api_key", "None Specified"),
+                    'symbols' => config("app.exchange_currency", "SEK"),
                 ],
             ]);
             $json_data = json_decode($res->getBody(), true);
+
+            if (!$json_data["success"]) {
+                if (array_key_exists("error", $json_data)) {
+                    return \Response::json(array("success" => false, "error" => array("info" => $json_data["error"]["info"])));
+                } else {
+                    return \Response::json(array("success" => false, "error" => array("info" => "Failed to connect to exchange rate API endpoint")));
+                }
+            }
 
             // Save data to database
             if (BirthdayExchangeRate::where('birthday', $birthday)->exists()) {
@@ -69,7 +77,7 @@ class BirthdayExchangeRateController extends Controller
             // Return data to front end so it can be updated without reloading the entire page
             return \Response::json(array("success" => true, "exchange_rate" => $birthday_data->exchange_rate, "search_count" => $birthday_data->search_count));
         } catch (RequestException $e) {
-            return \Response::json(array("success" => false, "error" => array("info" => "Failed to connect to exchange rate API endpoint")));
+            return \Response::json(array("success" => false, "error" => array("info" => "Failed to retrive exchange rate data")));
         }
     }
 }
